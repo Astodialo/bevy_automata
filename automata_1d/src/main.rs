@@ -24,8 +24,8 @@ fn main() {
     .run();
 }
 
-const X: f32 = 480.;
-const C: f32 = 48.;
+const X: f32 = 920.;
+const C: f32 = 92.;
 const SIZE: f32 = X / C;
 const RULE: i32 = 110;
 const COLORS: [Color; 2] = [Color::hsl(0.5, 0.75, 0.8), Color::hsl(0.5, 0.25, 0.2)];
@@ -57,7 +57,7 @@ fn startup(
 
     let cell = Mesh2dHandle(meshes.add(Rectangle::new(SIZE, SIZE)));
     fn spawn_rule(i: usize) -> bool {
-        i % 3 == 0
+        i == (C / 2.) as usize
     }
 
     for i in 0..C as usize {
@@ -132,11 +132,9 @@ fn generate(
         };
         let transform = Transform::from_xyz(
             cell.0.translation.x,
-            cell.0.translation.y + SIZE,
+            cell.0.translation.y - SIZE,
             cell.0.translation.z,
         );
-
-        println!("{}", transform.translation.y);
 
         commands.spawn((
             MaterialMesh2dBundle {
