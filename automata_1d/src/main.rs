@@ -24,14 +24,21 @@ fn main() {
     .run();
 }
 
-const X: f32 = 920.;
-const C: f32 = 92.;
+const X: f32 = 40.;
+const Y: f32 = X * 4.;
+const C: f32 = 40.;
 const SIZE: f32 = X / C;
 const RULE: i32 = 110;
 const COLORS: [Color; 2] = [Color::hsl(0.5, 0.75, 0.8), Color::hsl(0.5, 0.25, 0.2)];
 
 #[derive(Component)]
 struct State(f32);
+
+#[derive(Component)]
+struct Storage(Vec<Vec<(Entity, State, Vec3)>>);
+
+#[derive(Component)]
+struct Row(Vec<(Entity, State, Vec3)>);
 
 fn startup(
     mut commands: Commands,
@@ -46,7 +53,7 @@ fn startup(
                 near: -1000.,
                 scaling_mode: ScalingMode::Fixed {
                     width: X,
-                    height: X,
+                    height: Y,
                 },
                 ..default()
             },
@@ -55,10 +62,12 @@ fn startup(
         PanOrbitCamera::default(),
     ));
 
-    let cell = Mesh2dHandle(meshes.add(Rectangle::new(SIZE, SIZE)));
+    let cell = Mesh2dHandle(meshes.add(Rectangle::new(SIZE, Y / C)));
     fn spawn_rule(i: usize) -> bool {
-        i == (C / 2.) as usize
+        i == (C / 2.) as usize + 1
     }
+    let mut cell_storage: Vec<Vec<(Entity, State, Vec3)>> = Vec::new();
+    let mut row_storage: Vec<(Entity, State, Vec3)> = Vec::new();
 
     for i in 0..C as usize {
         let material = if spawn_rule(i) {
@@ -71,20 +80,28 @@ fn startup(
 
         let transform = Transform::from_xyz(
             -X / 2. + (SIZE / 2.) + (i as f32 * SIZE),
-            X / 2. - (SIZE / 2.),
+            Y / 2. - (SIZE / 2.),
             0.,
         );
 
-        commands.spawn((
-            MaterialMesh2dBundle {
-                mesh: cell.clone(),
-                material,
-                transform,
-                ..default()
-            },
-            state,
-        ));
+        let cell_entity = commands
+            .spawn((
+                MaterialMesh2dBundle {
+                    mesh: cell.clone(),
+                    material,
+                    transform,
+                    ..default()
+                },
+                state,
+            ))
+            .id();
+
+        let state = if spawn_rule(i) { State(1.) } else { State(0.) };
+        row_storage.push((cell_entity, state, transform.translation));
     }
+
+    cell_storage.push(row_storage);
+    commands.spawn(Storage(cell_storage));
 }
 
 fn calc_state(a: i32, b: i32, c: i32) -> i32 {
@@ -105,45 +122,50 @@ fn generate(
     mut commands: Commands,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
-    cells: Query<(&Transform, &State)>,
+    mut storage: Query<&mut Storage>,
 ) {
-    for (i, cell) in cells.iter().enumerate() {
-        let mut p_cell = 0;
-        let mut n_cell = 0;
+    let mut row_storage: Vec<(Entity, State, Vec3)> = Vec::new();
+    let mut cell_storage = storage.get_single_mut().unwrap();
+    let last_row = cell_storage.0.last().unwrap();
+
+    let mut i = 0;
+    for cell in last_row {
+        let p_cell;
+        let n_cell;
 
         if i == 0 {
-            p_cell = cells.iter().last().unwrap().1 .0 as i32;
-        } else if i == cells.iter().len() - 1 {
-            n_cell = cells.iter().collect::<Vec<(&Transform, &State)>>()[0].1 .0 as i32;
+            p_cell = last_row.last().unwrap().1 .0;
+            n_cell = last_row[i + 1].1 .0
+        } else if i == last_row.len() - 1 {
+            p_cell = last_row[i - 1].1 .0;
+            n_cell = last_row[0].1 .0
         } else {
-            p_cell = cells.iter().collect::<Vec<(&Transform, &State)>>()[i - 1]
-                .1
-                 .0 as i32;
-            n_cell = cells.iter().collect::<Vec<(&Transform, &State)>>()[i + 1]
-                .1
-                 .0 as i32;
+            p_cell = last_row[i - 1].1 .0;
+            n_cell = last_row[i + 1].1 .0;
         }
 
-        let n_state = calc_state(p_cell, cell.1 .0 as i32, n_cell);
+        let n_state = calc_state(p_cell as i32, cell.1 .0 as i32, n_cell as i32);
         let material = if n_state == 0 {
             materials.add(COLORS[0])
         } else {
             materials.add(COLORS[1])
         };
-        let transform = Transform::from_xyz(
-            cell.0.translation.x,
-            cell.0.translation.y - SIZE,
-            cell.0.translation.z,
-        );
+        let transform = Transform::from_xyz(cell.2.x, cell.2.y - SIZE, cell.2.z);
+        let cell_entity = commands
+            .spawn((
+                MaterialMesh2dBundle {
+                    mesh: Mesh2dHandle(meshes.add(Rectangle::new(SIZE, SIZE))),
+                    material,
+                    transform,
+                    ..default()
+                },
+                State(n_state as f32),
+            ))
+            .id();
 
-        commands.spawn((
-            MaterialMesh2dBundle {
-                mesh: Mesh2dHandle(meshes.add(Rectangle::new(SIZE, SIZE))),
-                material,
-                transform,
-                ..default()
-            },
-            State(n_state as f32),
-        ));
+        row_storage.push((cell_entity, State(n_state as f32), transform.translation));
+        i += 1;
     }
+
+    cell_storage.0.push(row_storage)
 }
