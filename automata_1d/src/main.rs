@@ -4,6 +4,7 @@ use bevy::{
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 use bevy_panorbit_camera::{PanOrbitCamera, PanOrbitCameraPlugin};
+use noise::{Abs, BasicMulti, NoiseFn, Perlin};
 
 fn main() {
     let mut app = App::new();
@@ -24,12 +25,11 @@ fn main() {
     .run();
 }
 
-const X: f32 = 40.;
-const Y: f32 = X * 4.;
-const C: f32 = 40.;
+const X: f32 = 160.;
+const Y: f32 = X;
+const C: f32 = 160.;
 const SIZE: f32 = X / C;
 const RULE: i32 = 110;
-const COLORS: [Color; 2] = [Color::hsl(0.5, 0.75, 0.8), Color::hsl(0.5, 0.25, 0.2)];
 
 #[derive(Component)]
 struct State(f32);
@@ -64,16 +64,26 @@ fn startup(
 
     let cell = Mesh2dHandle(meshes.add(Rectangle::new(SIZE, Y / C)));
     fn spawn_rule(i: usize) -> bool {
-        i == (C / 2.) as usize + 1
+        i % 11 == 0
     }
     let mut cell_storage: Vec<Vec<(Entity, State, Vec3)>> = Vec::new();
     let mut row_storage: Vec<(Entity, State, Vec3)> = Vec::new();
 
+    let noise = BasicMulti::<Perlin>::new(111);
     for i in 0..C as usize {
+        let noise_val = noise.get([i as f64 / 200., 0.]) * 11.;
+        dbg!(noise_val);
+        let hue = noise_val as f32 * (360. * (i / 11) as f32 / (C / 11.));
         let material = if spawn_rule(i) {
-            materials.add(COLORS[1])
+            materials.add(Color::hsl(
+                hue, //map_range(i as f32, 0., C as f32, 0., 1.),
+                0.75, 0.75,
+            ))
         } else {
-            materials.add(COLORS[0])
+            materials.add(Color::hsl(
+                hue, //map_range(i as f32, 0., C as f32, 0., 1.),
+                0.25, 0.25,
+            ))
         };
 
         let state = if spawn_rule(i) { State(1.) } else { State(0.) };
@@ -129,6 +139,7 @@ fn generate(
     let last_row = cell_storage.0.last().unwrap();
 
     let mut i = 0;
+    let noise = BasicMulti::<Perlin>::new(111);
     for cell in last_row {
         let p_cell;
         let n_cell;
@@ -145,10 +156,21 @@ fn generate(
         }
 
         let n_state = calc_state(p_cell as i32, cell.1 .0 as i32, n_cell as i32);
+        let noise_val = noise
+            .get([i as f64 / 200., cell_storage.0.len() as f64 / 200.])
+            .abs()
+            * 11.;
+        let hue = noise_val as f32 * (360. * (i / 11) as f32 / (C / 11.));
         let material = if n_state == 0 {
-            materials.add(COLORS[0])
+            materials.add(Color::hsl(
+                hue, //map_range(i as f32, 0., C as f32, 0., 1.),
+                0.75, 0.75,
+            ))
         } else {
-            materials.add(COLORS[1])
+            materials.add(Color::hsl(
+                hue, //map_range(i as f32, 0., C as f32, 0., 1.),
+                0.25, 0.25,
+            ))
         };
         let transform = Transform::from_xyz(cell.2.x, cell.2.y - SIZE, cell.2.z);
         let cell_entity = commands
@@ -167,5 +189,8 @@ fn generate(
         i += 1;
     }
 
-    cell_storage.0.push(row_storage)
+    cell_storage.0.push(row_storage);
+    if cell_storage.0.len() >= (Y / SIZE) as usize {
+        cell_storage.0.remove(0);
+    }
 }
